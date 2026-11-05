@@ -1,0 +1,25 @@
+# Local configuration
+.env
+.env.*
+!.env.example
+
+# Python and local tools
+__pycache__/
+*.py[cod]
+.venv/
+.tools/
+.cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log

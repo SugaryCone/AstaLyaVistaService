@@ -1,0 +1,11 @@
+# TEMPLATE ONLY: not buildable until requirements.txt and code are added.
+# Copy to Dockerfile after choosing and implementing the client.
+FROM python:3.13-slim
+
+WORKDIR /app
+COPY requirements.txt ./
+RUN python -m pip install --no-cache-dir -r requirements.txt
+COPY src ./src
+# Set the actual entry point after adding the application, for example:
+# ENV PYTHONPATH=/app/src
+# CMD ["python", "-m", "your_client"]

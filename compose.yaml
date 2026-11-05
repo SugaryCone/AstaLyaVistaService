@@ -1,0 +1,22 @@
+name: astalavista
+
+services:
+  database-api:
+    build:
+      context: ./database-api
+      target: runtime
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    environment:
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
+    init: true
+    # Memory storage belongs to this one process and resets on restart.
+
+  database-api-check:
+    profiles: ["tools"]
+    build:
+      context: ./database-api
+      target: checks
+    environment:
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
+    init: true
