@@ -1,6 +1,18 @@
 name: astalavista
 
 services:
+  database:
+    build:
+      context: ./database
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: taskUser
+      POSTGRES_PASSWORD: jnwjfn31223nd_q3d
+      POSTGRES_DB: TaskBase
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      
   database-api:
     build:
       context: ./database-api
@@ -20,3 +32,6 @@ services:
     environment:
       APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
     init: true
+    
+volumes:
+  postgres_data:
