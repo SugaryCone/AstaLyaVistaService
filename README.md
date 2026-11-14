@@ -7,7 +7,7 @@
 Нужны работающий Docker и Docker Compose. Команды выполняются из корня проекта:
 
 ```sh
-docker compose up -d --build database-api
+docker compose up -d --build
 ```
 
 Команда собирает образ, устанавливает зависимости и запускает контейнер в фоне.
@@ -15,7 +15,7 @@ docker compose up -d --build database-api
 Посмотреть логи и остановить сервис:
 
 ```sh
-docker compose logs -f database-api
+docker compose logs -f
 docker compose down
 ```
 
@@ -25,7 +25,6 @@ docker compose down
 
 - Создание, просмотр, изменение и удаление задач: `/api/v1/tasks`.
 - Смена статуса задачи: `/api/v1/tasks/{task_id}/status`.
-- Связи между задачами и автоматические номера вида `ASTA-1`.
 - Фильтры по исполнителю, проекту, статусу, просроченности и открытым задачам.
 - Тестовые справочники проектов и сотрудников: `/api/v1/projects`, `/api/v1/employees`.
 
