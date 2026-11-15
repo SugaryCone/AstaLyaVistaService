@@ -32,6 +32,17 @@ services:
     environment:
       APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Moscow}
     init: true
-    
+
+  client:
+    build:
+      context: ./client
+    env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # depends_on:
+    #   database-api:
+    #     condition: service_started
+
 volumes:
   postgres_data:
