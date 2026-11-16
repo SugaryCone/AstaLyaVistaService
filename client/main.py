@@ -1,12 +1,14 @@
-import os
+from os import getenv
 from dotenv import load_dotenv
 from dataclasses import dataclass
 
 import asyncio
+import handlers.tasks
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 from aiogram.client.session.aiohttp import AiohttpSession
 
@@ -19,22 +21,12 @@ class ClientSettings:
 
 def get_settings() -> ClientSettings:
     return ClientSettings(
-        bot_token=os.environ["CLIENT_BOT_TOKEN"],
-        http_proxy=os.environ.get("http_proxy"),
+        bot_token=getenv("CLIENT_BOT_TOKEN"),
+        http_proxy=getenv("http_proxy"),
     )
 
-aiogram_dispatcher = Dispatcher()
-
-@aiogram_dispatcher.message(CommandStart())
 async def cmd_start(message: Message) -> None:
-    await message.answer(
-        "Hello world!\n"
-        "There is no spoon."
-    )
-
-@aiogram_dispatcher.message(F.text)
-async def echo(message: Message) -> None:
-    await message.answer(f"(echo) {message.text}")
+    await message.answer("What can I do for you?")
 
 async def main() -> None:
     settings = get_settings()
@@ -45,7 +37,12 @@ async def main() -> None:
         session=AiohttpSession(proxy=settings.http_proxy),
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    await aiogram_dispatcher.start_polling(bot)
+
+    dp = Dispatcher()
+    dp.message.register(cmd_start, Command("start"))
+    dp.message.register(handlers.tasks.command, Command("tasks"))
+    dp.callback_query.register(handlers.tasks.button_task, F.data.startswith("task#"))
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())

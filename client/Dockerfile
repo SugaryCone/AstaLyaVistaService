@@ -5,7 +5,8 @@ USER client
 WORKDIR /client
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
-COPY *.py .
+COPY main.py .
+COPY handlers handlers
 
 FROM base AS runtime
 CMD ["python", "main.py"]
