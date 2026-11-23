@@ -1,0 +1,183 @@
+name: API CI/CD
+
+on:
+  pull_request:
+    branches: [develop, main]
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [develop, main, 'release/**', 'hotfix/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    name: API checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check Gitflow branches
+        if: github.event_name == 'pull_request'
+        run: |
+          case "$GITHUB_BASE_REF:$GITHUB_HEAD_REF" in
+            main:release/?*|main:hotfix/?*) ;;
+            develop:feature/?*|develop:release/?*|develop:hotfix/?*) ;;
+            *)
+              echo '::error::Use feature/*, release/* or hotfix/* for develop, and release/* or hotfix/* for main.'
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint the Helm chart
+        run: helm lint --strict deploy/helm/database-api
+
+      - name: Run pytest in Docker
+        run: docker compose run --build --rm database-api-check
+
+      - name: Build runtime image
+        run: |
+          docker build --target runtime --tag database-api:ci \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            database-api
+
+      - name: Start the image and check /health
+        id: smoke
+        run: |
+          docker run --detach --init --name database-api-ci \
+            --publish 127.0.0.1:8000:8000 database-api:ci
+          curl --fail --silent --show-error --max-time 5 \
+            --retry 15 --retry-all-errors --retry-delay 2 --retry-max-time 40 \
+            http://127.0.0.1:8000/health
+
+      - name: Show container logs on failure
+        if: failure() && steps.smoke.outcome == 'failure'
+        run: docker logs database-api-ci
+
+      - name: Save the tested image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker image save database-api:ci | gzip > "$RUNNER_TEMP/database-api.tar.gz"
+
+      - name: Pass the image to the publish job
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: database-api-image
+          path: ${{ runner.temp }}/database-api.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+          overwrite: true
+
+  publish:
+    name: Publish image to GHCR
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - name: Require protection on main
+        if: ${{ !github.ref_protected }}
+        run: |
+          echo '::error::Enable branch protection for main before publishing.'
+          exit 1
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: database-api-image
+          path: ${{ runner.temp }}
+
+      - name: Push the tested image
+        id: push
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}/database-api"
+          tag="$image:sha-$GITHUB_SHA"
+          docker image load --input "$RUNNER_TEMP/database-api.tar.gz"
+          docker image tag database-api:ci "$tag"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker image push "$tag" | tee "$RUNNER_TEMP/push.log"
+          digest=$(awk '$2 == "digest:" { print $3 }' "$RUNNER_TEMP/push.log")
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'image=%s@%s\n' "$image" "$digest" >> "$GITHUB_OUTPUT"
+          printf 'Published `%s@%s`\n' "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy to Minikube with Helm
+    needs: publish
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Deploy the chart over SSH
+        env:
+          IMAGE: ${{ needs.publish.outputs.image }}
+          GH_TOKEN: ${{ github.token }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          IMAGE_PULL_SECRET: ${{ vars.DEPLOY_IMAGE_PULL_SECRET }}
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          main_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$main_sha" != "$GITHUB_SHA" ]]; then
+            echo 'A newer commit is on main. Skipping this deployment.'
+            exit 0
+          fi
+
+          : "${DEPLOY_HOST:?Set DEPLOY_HOST}" "${DEPLOY_USER:?Set DEPLOY_USER}"
+          : "${SSH_PRIVATE_KEY:?Set DEPLOY_SSH_KEY}" "${SSH_KNOWN_HOSTS:?Set DEPLOY_KNOWN_HOSTS}"
+          [[ "$IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]
+          if [[ -n "$IMAGE_PULL_SECRET" && ! "$IMAGE_PULL_SECRET" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
+            echo '::error::DEPLOY_IMAGE_PULL_SECRET must be a Kubernetes Secret name.'
+            exit 1
+          fi
+
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/deploy-key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$RUNNER_TEMP/deploy-known-hosts"
+          trap 'rm -f "$RUNNER_TEMP/deploy-key" "$RUNNER_TEMP/deploy-known-hosts"' EXIT
+
+          chart_dir=$(mktemp -d)
+          helm package deploy/helm/database-api --destination "$chart_dir"
+
+          remote_script=$(cat <<'DEPLOY'
+          set -euo pipefail
+          chart=$(mktemp --suffix=.tgz)
+          trap 'rm -f "$chart"' EXIT
+          cat > "$chart"
+          helm upgrade --install database-api "$chart" \
+            --kube-context astalavista --namespace astalavista \
+            --set-string "image.reference=$1" \
+            --set-string "image.pullSecret=$2" \
+            --atomic --timeout 4m --history-max 10
+          DEPLOY
+          )
+          printf -v remote_command 'bash -c %q -- %q %q' "$remote_script" "$IMAGE" "$IMAGE_PULL_SECRET"
+          cat "$chart_dir"/*.tgz | ssh -T -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/deploy-known-hosts" \
+            -i "$RUNNER_TEMP/deploy-key" -p "$DEPLOY_PORT" -l "$DEPLOY_USER" \
+            -- "$DEPLOY_HOST" "$remote_command"
