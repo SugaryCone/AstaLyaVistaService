@@ -9,10 +9,7 @@ __pycache__/
 .venv/
 .tools/
 .cache/
-.pytest_cache/
 .ruff_cache/
-.coverage
-htmlcov/
 *.egg-info/
 build/
 dist/

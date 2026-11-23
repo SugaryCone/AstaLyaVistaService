@@ -2,12 +2,14 @@
 
 import os
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from datetime import date, datetime
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, FastAPI, Query, Request, Response, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from fixtures import create_demo_repository
 from models import (
@@ -22,32 +24,54 @@ from models import (
     TaskUpdate,
 )
 from service import ServiceError, TaskService
+from sql_storage import SQLTaskRepository
+from storage import TaskRepository
 
 
-def create_app(*, today: Callable[[], date] | None = None) -> FastAPI:
+def create_app(
+    *, today: Callable[[], date] | None = None, database_url: str | None = None,
+) -> FastAPI:
     if today is None:
         timezone = ZoneInfo(os.getenv("APP_TIMEZONE", "Europe/Moscow"))
 
         def today() -> date:
             return datetime.now(timezone).date()
 
+    database_url = os.getenv("DATABASE_URL") if database_url is None else database_url
+    repository: TaskRepository = (
+        SQLTaskRepository(database_url) if database_url else create_demo_repository(today())
+    )
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        try:
+            with repository.transaction():
+                repository.check_health()
+            yield
+        finally:
+            repository.close()
+
+    storage_description = (
+        "Данные сохраняются в PostgreSQL. " if database_url
+        else "Тестовое хранилище в памяти; данные сбрасываются при перезапуске. "
+    )
     app = FastAPI(
-        title="AstaLaVista — мок-API задач",
-        version="0.1.0",
-        description=(
-            "Демонстрационный API с хранилищем в памяти. "
-            "Данные сбрасываются при перезапуске процесса. "
-            "Проекты и сотрудники — тестовые справочники. "
+        title="AstaLaVista — API задач",
+        version="0.2.0",
+        description=storage_description + (
+            "Проекты и сотрудники доступны как справочники. "
             "Типы и статусы перечислены в схемах; запросы выполняются без авторизации."
         ),
+        lifespan=lifespan,
     )
-    service = TaskService(create_demo_repository(today()), today)
+    service = TaskService(repository, today)
     app.state.task_service = service
     router = APIRouter(
         prefix="/api/v1",
         responses={
             404: {"model": ErrorResponse, "description": "Задача не найдена"},
             422: {"model": ErrorResponse, "description": "Неверные данные или ссылки"},
+            503: {"model": ErrorResponse, "description": "База данных недоступна"},
         },
     )
 
@@ -55,15 +79,27 @@ def create_app(*, today: Callable[[], date] | None = None) -> FastAPI:
     async def service_error_handler(request: Request, exc: ServiceError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
+    @app.exception_handler(IntegrityError)
+    async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSONResponse:
+        return JSONResponse(status_code=422, content={
+            "detail": "Невозможно сохранить данные: нарушено ограничение БД или удалена связанная запись",
+        })
+
+    @app.exception_handler(OperationalError)
+    async def database_error_handler(request: Request, exc: OperationalError) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"detail": "База данных недоступна"})
+
     @app.get("/health", tags=["Служебное"], summary="Проверка работоспособности")
     def health() -> HealthResponse:
-        return HealthResponse()
+        with repository.transaction():
+            repository.check_health()
+        return HealthResponse(storage=repository.storage_kind)
 
-    @router.get("/projects", tags=["Справочники"], summary="Список тестовых проектов")
+    @router.get("/projects", tags=["Справочники"], summary="Список проектов")
     def list_projects() -> list[Project]:
         return service.list_projects()
 
-    @router.get("/employees", tags=["Справочники"], summary="Список тестовых сотрудников")
+    @router.get("/employees", tags=["Справочники"], summary="Список сотрудников")
     def list_employees() -> list[Employee]:
         return service.list_employees()
 

@@ -39,8 +39,8 @@ class Employee(BaseModel):
 
 class TaskCreate(InputModel):
     type: TaskType = Field(description="task — задача; bug — ошибка; requirement — требование")
-    project_id: str = Field(min_length=1, examples=["project-asta"])
-    assignee_id: str | None = Field(default=None, min_length=1, examples=["employee-anna"])
+    project_id: str = Field(min_length=1, examples=["1"])
+    assignee_id: str | None = Field(default=None, min_length=1, examples=["1"])
     description: str = Field(min_length=1, examples=["Подготовить описание API"])
     status: TaskStatus = TaskStatus.REGISTERED
     linked_task_ids: list[str] = Field(default_factory=list, description="ID связанных задач")
@@ -98,7 +98,7 @@ class TaskRecord(TaskCreate):
     """Validated task stored by a repository, without time-dependent flags."""
 
     id: str
-    number: str
+    number: str = Field(description="Назначается автоматически: <Код проекта>-<Порядковый номер>")
 
 
 class TaskRead(TaskRecord):

@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from datetime import date
-from uuid import uuid4
 
 from models import (
     Employee,
@@ -44,8 +43,8 @@ class TaskService:
             is_overdue=is_open and task.due_date is not None and today > task.due_date,
         )
 
-    def _get(self, task_id: str) -> TaskRecord:
-        task = self.repository.get_task(task_id)
+    def _get(self, task_id: str, *, for_update: bool = False) -> TaskRecord:
+        task = self.repository.get_task(task_id, for_update=for_update)
         if task is None:
             raise ServiceError(404, f"Задача {task_id} не найдена")
         return task
@@ -97,24 +96,17 @@ class TaskService:
     def create_task(self, payload: TaskCreate) -> TaskRead:
         with self.repository.transaction():
             self._validate_references(payload)
-            task = TaskRecord(
-                **payload.model_dump(),
-                id=str(uuid4()),
-                number=self.repository.next_number(payload.project_id),
-            )
-            self.repository.save_task(task)
+            task = self.repository.create_task(payload)
             return self._read(task, self.today())
 
     def update_task(self, task_id: str, payload: TaskUpdate) -> TaskRead:
         with self.repository.transaction():
-            original = self._get(task_id)
+            original = self._get(task_id, for_update=True)
             values = original.model_dump()
             values.update(payload.model_dump(exclude_unset=True))
             task = TaskRecord.model_validate(values)
             self._validate_references(task, task_id)
-            if task.project_id != original.project_id:
-                task.number = self.repository.next_number(task.project_id)
-            self.repository.save_task(task)
+            task = self.repository.save_task(task)
             return self._read(task, self.today())
 
     def change_status(self, task_id: str, status: TaskStatus) -> TaskRead:
@@ -122,7 +114,7 @@ class TaskService:
 
     def delete_task(self, task_id: str) -> None:
         with self.repository.transaction():
-            self._get(task_id)
+            self._get(task_id, for_update=True)
             self.repository.delete_task(task_id)
             for task in self.repository.list_tasks():
                 if task_id in task.linked_task_ids:
