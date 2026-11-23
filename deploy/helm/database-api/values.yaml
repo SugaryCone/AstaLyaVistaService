@@ -1,0 +1,13 @@
+image:
+  reference: database-api:local
+  pullPolicy: IfNotPresent
+  pullSecret: ""
+
+appTimezone: Europe/Moscow
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
