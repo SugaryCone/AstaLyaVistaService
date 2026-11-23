@@ -43,28 +43,37 @@ jobs:
       - name: Lint the Helm chart
         run: helm lint --strict deploy/helm/database-api
 
-      - name: Run pytest in Docker
-        run: docker compose run --build --rm database-api-check
-
-      - name: Build runtime image
+      - name: Build API and PostgreSQL images
         run: |
-          docker build --target runtime --tag database-api:ci \
+          docker build --tag database-api:ci --tag astalavista-ci-database-api \
             --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             database-api
+          docker compose --project-name astalavista-ci build database
 
-      - name: Start the image and check /health
+      - name: Start API with PostgreSQL and check /health
         id: smoke
         run: |
-          docker run --detach --init --name database-api-ci \
-            --publish 127.0.0.1:8000:8000 database-api:ci
+          docker compose --project-name astalavista-ci up --detach --no-build
           curl --fail --silent --show-error --max-time 5 \
-            --retry 15 --retry-all-errors --retry-delay 2 --retry-max-time 40 \
-            http://127.0.0.1:8000/health
+            --retry 30 --retry-all-errors --retry-delay 2 --retry-max-time 90 \
+            http://127.0.0.1:8000/health > "$RUNNER_TEMP/health.json"
+          python - "$RUNNER_TEMP/health.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as response:
+              health = json.load(response)
+          assert health == {"status": "ok", "storage": "postgresql"}, health
+          PY
 
       - name: Show container logs on failure
         if: failure() && steps.smoke.outcome == 'failure'
-        run: docker logs database-api-ci
+        run: docker compose --project-name astalavista-ci logs --no-color --tail 100
+
+      - name: Remove CI containers and database volume
+        if: always()
+        run: docker compose --project-name astalavista-ci down --volumes
 
       - name: Save the tested image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

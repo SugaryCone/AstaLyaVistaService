@@ -146,8 +146,10 @@ git switch -c hotfix/health-check origin/main
 Если у `release/*` или `hotfix/*` открыт PR, новый push может запустить две проверки —
 для самой ветки и для её слияния с целевой веткой PR.
 
-`API checks` проверяет Helm-чарт через `helm lint`, запускает pytest в Docker,
-собирает образ API, запускает его и проверяет HTTP-ответ `/health`.
+`API checks` проверяет Helm-чарт через `helm lint`, собирает образы API и PostgreSQL,
+запускает их через Docker Compose и проверяет, что `/health` возвращает
+`{"status":"ok","storage":"postgresql"}`. После проверки удаляются контейнеры
+и отдельный том БД с данными этого CI-запуска.
 В PR дополнительно проверяется направление слияния: в `main` разрешены
 `release/*` и `hotfix/*`, в `develop` — `feature/*`, `release/*` и `hotfix/*`.
 
