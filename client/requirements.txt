@@ -1,3 +1,5 @@
 aiogram==3.31.0
 aiohttp_socks==0.12.0
 python-dotenv==1.2.4
+requests==2.34.2
+loguru==0.8.0

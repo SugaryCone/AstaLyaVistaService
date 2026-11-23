@@ -36,13 +36,15 @@ services:
   client:
     build:
       context: ./client
-    env_file: .env
+    depends_on:
+      database-api:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-    # depends_on:
-    #   database-api:
-    #     condition: service_started
+    environment:
+      CLIENT_API_URL: ${CLIENT_API_URL:-http://database-api:${API_PORT:-8000}/api/v1}
+      CLIENT_BOT_TOKEN: ${CLIENT_BOT_TOKEN}
+      CLIENT_BOT_PROXY: ${CLIENT_BOT_PROXY-${https_proxy-${http_proxy}}}
 
 volumes:
   postgres_data:
