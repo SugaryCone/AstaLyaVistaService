@@ -1,4 +1,4 @@
-import requests
+from . import api
 from os import getenv
 
 import math
@@ -12,7 +12,7 @@ router = Router()
 
 MAX_BUTTON_TEXT_LEN = 50
 TASKS_PER_PAGE = 10
-API_URL = getenv("CLIENT_API_URL")
+# API_URL = getenv("CLIENT_API_URL")
 
 def get_tasks_keyboard(page: int, tasks: list) -> InlineKeyboardBuilder:
     builder = InlineKeyboardBuilder()
@@ -55,8 +55,7 @@ def get_tasks_keyboard(page: int, tasks: list) -> InlineKeyboardBuilder:
 
 @router.message(Command("tasks"))
 async def cmd_tasks(message: Message):
-    logger.info("\\tasks called")
-    tasks = requests.get(API_URL + "/tasks").json()
+    tasks = api.get_tasks()
     total_count = len(tasks)
     kb_builder = get_tasks_keyboard(page=1, tasks=tasks)
     
@@ -71,7 +70,7 @@ async def process_pagination(callback: CallbackQuery):
     page = int(callback.data.split(":")[1])
     total_count = len(MOCK_TASKS)
     
-    kb_builder = get_tasks_keyboard(page=page, total_tasks=requests.get(API_URL + "/tasks").json())
+    kb_builder = get_tasks_keyboard(page=page, total_tasks=api.get_tasks())
     
     await callback.message.edit_text(
         text=f"Всего {total_count} задач.",
@@ -91,6 +90,5 @@ async def process_noop(callback: CallbackQuery):
     await callback.answer()
 
 async def register(dp: Dispatcher):
-    logger.info(f"API requests will be sent to {API_URL}")
     logger.info(f"Number of tasks per page is {TASKS_PER_PAGE}")
     dp.include_router(router)
