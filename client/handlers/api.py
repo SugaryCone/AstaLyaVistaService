@@ -23,6 +23,7 @@ def get_tasks() -> Any:
         raise exc
 
 def get_task(task_id: str) -> Any:
+    logger.info(f"Trying to concatenate: {task_id}")
     url = API_URL + "/tasks" + "/" + task_id
     try:
         response = requests.get(url)
@@ -32,6 +33,15 @@ def get_task(task_id: str) -> Any:
     except RequestException as exc:
         logger.error(f"{url} - Cannot perform request")
         raise exc
+
+def get_linked_tasks(task: dict) -> list:
+    try:
+        linked_tasks = []
+        for task_id in task["linked_task_ids"]:
+            linked_tasks.append(get_task(task_id))
+        return linked_tasks
+    except (APIError, RequestException):
+        raise
 
 def get_search_employee(employee_id: str) -> dict:
     url = API_URL + "/employees"
