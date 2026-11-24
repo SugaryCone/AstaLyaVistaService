@@ -3,7 +3,7 @@ from os import getenv
 import sys
 
 import asyncio
-import handlers.tasks
+from handlers import tasks, task
 from loguru import logger
 
 from aiogram import Bot, Dispatcher
@@ -34,7 +34,8 @@ async def main() -> None:
     )
     dp = Dispatcher()
     dp.message.register(cmd_start, Command("start"))
-    await handlers.tasks.register(dp)
+    await tasks.register(dp)
+    await task.register(dp)
     logger.info("Polling started")
     await dp.start_polling(bot)
 
