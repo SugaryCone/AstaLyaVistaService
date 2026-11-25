@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Text, Date, Integer, ForeignKey, Table
+from sqlalchemy import Column, BigInteger, String, Text, Date, Integer, ForeignKey, Table, DateTime, Identity, FetchedValue, func
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -13,39 +13,39 @@ task_links = Table(
 
 class ProjectDB(Base):
     __tablename__ = "projects"
-    id = Column(BigInteger, primary_key=True)
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
     code = Column(String(32), nullable=False, unique=True)
     name = Column(String(255), nullable=False)
-    last_task_number = Column(BigInteger, nullable=False, default=0)
+    last_task_number = Column(BigInteger, nullable=False, server_default="0")
 
 class EmployeeDB(Base):
     __tablename__ = "employees"
-    id = Column(BigInteger, primary_key=True)
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
     name = Column(String(255), nullable=False)
-    surname = Column(String(255))
+    surname = Column(String(255), nullable=False)
 
 class StateDB(Base):
     __tablename__ = "states"
-    id = Column(BigInteger, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=False)
     name = Column(String(255), nullable=False)
 
 class TaskTypeDB(Base):
     __tablename__ = "task_types"
-    id = Column(BigInteger, primary_key=True)
+    id = Column(Integer, primary_key=True, autoincrement=False)
     name = Column(String(255), nullable=False)
 
 class TaskDB(Base):
     __tablename__ = "tasks"
-    id = Column(BigInteger, primary_key=True)
+    id = Column(BigInteger, Identity(always=True), primary_key=True)
     project_id = Column(BigInteger, ForeignKey("projects.id"), nullable=False)
     employee_id = Column(BigInteger, ForeignKey("employees.id"), nullable=True)
     description = Column(Text, nullable=False)
     state_id = Column(BigInteger, ForeignKey("states.id"), nullable=False)
     type_id = Column(BigInteger, ForeignKey("task_types.id"), nullable=False)
-    created_at = Column(Text, nullable=False) 
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     deadline_at = Column(Date, nullable=True)
-    spent_minutes = Column(Integer, nullable=False, default=0)
-    number = Column(String, nullable=False, unique=True)
+    spent_minutes = Column(Integer, nullable=False, server_default="0")
+    number = Column(Text, nullable=False, unique=True, server_default=FetchedValue(), server_onupdate=FetchedValue())
 
     # Relationship to handle the linked tasks
     links = relationship(

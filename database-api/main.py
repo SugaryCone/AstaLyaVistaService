@@ -24,7 +24,7 @@ from models import (
     TaskUpdate,
 )
 from service import ServiceError, TaskService
-from sql_storage import SQLTaskRepository
+from db_storage import PostgresTaskRepository
 from storage import TaskRepository
 
 
@@ -39,7 +39,7 @@ def create_app(
 
     database_url = os.getenv("DATABASE_URL") if database_url is None else database_url
     repository: TaskRepository = (
-        SQLTaskRepository(database_url) if database_url else create_demo_repository(today())
+        PostgresTaskRepository(database_url) if database_url else create_demo_repository(today())
     )
 
     @asynccontextmanager
